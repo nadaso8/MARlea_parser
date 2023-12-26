@@ -1,9 +1,10 @@
+//! CSV parser object
 // delimiters (all of these should be silent)
 space_delimiter = _{" "+} // separates coefficients and names
 plus_delimiter = _{" "* ~ "+" ~ " "*} // separates terms
 fat_arrow_delimiter = _{" "* ~ "=>" ~ " "*} // separates reactants and products
 comma_delimiter = _{" "* ~ "," ~ " "*} // separates reactants and products from reaction rate
-new_line_delimiter = _{" "* ~ "NEWLINE" ~ " "*} // separates reactions
+new_line_delimiter = _{" "* ~ NEWLINE ~ " "*} // separates reactions
 delimiter = {
     space_delimiter
     |plus_delimiter
@@ -12,12 +13,12 @@ delimiter = {
     |new_line_delimiter
 }
 
-
+comment = _{"//" ~ (!new_line_delimiter ~ !comma_delimiter ~ ANY)*}
 coefficient = {ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*} // match any non zero number 
 name = {(!delimiter ~ ANY)+} // match any non delimiter character one or more times 
 term = {(coefficient ~ space_delimiter)? ~ name} // optional coefficient with associated names separated by one or more spaces
-reactants = {(term) ~ (plus_delimiter ~ term)*} // none or more terms separated by plus signs 
-products = {(term) ~ (plus_delimiter ~ term)*} // none or more terms separated by plus signs
+reactants = {((term) ~ (plus_delimiter ~ term)*)|"NULL"} // none or more terms separated by plus signs 
+products = {((term) ~ (plus_delimiter ~ term)*)|"NULL"} // none or more terms separated by plus signs
 reaction_rate = {coefficient} // wrapper around a coefficient
 reaction = {reactants ~ fat_arrow_delimiter ~ products ~ comma_delimiter ~ reaction_rate} // reactants => products, reaction_rate
-line = { reaction? ~ comma_delimiter+ ~ new_line_delimiter } // guarantees only one reaction per line follewed by an arbritrary numbeer of commas or spaces 
+reaction_set = {(reaction? ~ (comma_delimiter ~ comment?)* ~ new_line_delimiter+)+} // a set of reactions delimited by new line characters with arbitrary extra comments and commas
