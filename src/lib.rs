@@ -106,7 +106,7 @@ mod tests {
         index.check + index => current_value.convert,1,
         current_value.convert + index.check => current_value.convert,10000,
         index.check + index.not.index.1 => calculate.return,1,
-        2 index.not.index.1 => index.not.index.1,10000,in
+        2 index.not.index.1 => index.not.index.1,10000,
         2 index.not.index.0 => index.not.index.1,10000,
         index.check => index.check + index.not.index.0,1,
         index + index.not.index.0 => index,10000,
@@ -158,12 +158,14 @@ mod tests {
         2 current_value.not.index.1 => current_value.not.index.1,10000,
         2 current_value.not.index.0 => current_value.not.index.1,10000,
         calculate.return => calculate.return + current_value.not.index.0,1,
-        current_value + current_value.not.index.0 => current_value ,10000,
-        current_value + current_value.not.index.1 => current_value ,10000,
+        current_value + current_value.not.index.0 => current_value,10000,
+        current_value + current_value.not.index.1 => current_value,10000,
+        fibonacci.call,1,
+        index,20,
         "};
 
         //print!("{}", input);
-        match CSVparser::parse(crate::Rule::reaction_set, input) {
+        match CSVparser::parse(crate::Rule::reaction_network, input) {
             Ok(result) => {
                 print!("{}\n", result);
                 for pair in result{
@@ -171,7 +173,7 @@ mod tests {
                         crate::Rule::coefficient => "coefficient",
                         crate::Rule::comma_delimiter => "comma_delimiter", 
                         crate::Rule::comment => "comment",
-                        crate::Rule::delimiter => "delimiter",
+                        crate::Rule::EOI => "end",
                         crate::Rule::fat_arrow_delimiter => "fat_arrow_delimiter",
                         crate::Rule::name => "name",
                         crate::Rule::new_line_delimiter => "new_line_delimiter",
@@ -180,8 +182,9 @@ mod tests {
                         crate::Rule::reactants => "reactants",
                         crate::Rule::reaction => "reaction",
                         crate::Rule::reaction_rate => "reaction_rate",
-                        crate::Rule::reaction_set => "reaction_set",
+                        crate::Rule::reaction_network => "reaction_network",
                         crate::Rule::space_delimiter => "space_delimiter",
+                        crate::Rule::species_count => "species_count",
                         crate::Rule::term => "term",
                     };
                     let text = pair.as_str();
@@ -189,7 +192,8 @@ mod tests {
                 }
             },
             Err(msg) => {
-                print!("{}", msg);
+                print!("{} \n\n\n", msg);
+                panic!("failed to parse")
             }
         };
     }
