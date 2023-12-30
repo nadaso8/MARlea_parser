@@ -7,21 +7,37 @@
 /// Its purpose it to take a variety of plaintext source files such as .csv or .rs and compile a reaction network, 
 /// which may be simulated by the [MARlea_engine](https://github.com/nadaso8/MARlea_engine) module.
 
-use std::path::{Path, self};
+use std::{path::Path, collections::{HashMap, HashSet}, io::{BufRead, Read}};
 
-use pest::Parser;
+use pest::{Parser, iterators::{Pair, Pairs}};
 use pest_derive::Parser;
 
-use marlea_engine::trial::reaction_network::ReactionNetwork;
+use marlea_engine::trial::reaction_network::{ReactionNetwork, self, solution::{Solution, Name, Count}, reaction::Reaction};
 
 // derive parsers 
 #[derive(Parser)]
 #[grammar = "grammars/csv.pest"]
 struct CSVparser;
 
+impl CSVparser {
+    /// recursively parse csv parser rules into a reaction network 
+    fn to_reaction_network(pairs: Pairs<'_, Rule>) -> ReactionNetwork {
+        let reactions: HashSet<Reaction> = HashSet::new();
+        let species_counts:HashMap<Name, Count> = HashMap::new();
 
-enum marlea_parser_error {
-    unknown(String)
+        for pair in pairs {
+            
+        }
+
+        return ReactionNetwork::new(reactions, Solution{ species_counts});
+    }
+}
+
+
+pub enum MarleaParserError {
+    ParseFailed(String),
+    UnsupportedExt(String),
+    InvalidFile(String),
 }
 
 // object containing any settings needed or relevant to the marlea parser 
@@ -33,12 +49,15 @@ impl marlea_parser {
     }
 
     /// Parses a reaction network and solution from a variety of file types 
-    pub fn parse(path: &Path) -> Result<ReactionNetwork,marlea_parser_error> {
-        let result = Result::Err(marlea_parser_error::unknown("failed to parse file".to_string()));
+    pub fn parse(path: &Path) -> Result<ReactionNetwork,MarleaParserError> {
+        // default catch all error state for parser
+        match path.extension() {
+            Some("csv") => {
 
-        todo!("make the parser");
-        
-        return result;
+            },
+            None => Result::Err(MarleaParserError::InvalidFile(format!("provided  Path: {} \ndid not contain an extension or does not exist"))),
+            
+        }
     }
 }
 
