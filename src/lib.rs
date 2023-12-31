@@ -7,7 +7,7 @@
 /// Its purpose it to take a variety of plaintext source files such as .csv or .rs and compile a reaction network, 
 /// which may be simulated by the [MARlea_engine](https://github.com/nadaso8/MARlea_engine) module.
 
-use std::{path::Path, collections::{HashMap, HashSet}, io::{BufRead, Read}};
+use std::{path::Path, collections::{HashMap, HashSet}, io::{BufRead, Read}, fmt::format};
 
 use pest::{Parser, iterators::{Pair, Pairs}};
 use pest_derive::Parser;
@@ -50,13 +50,18 @@ impl marlea_parser {
 
     /// Parses a reaction network and solution from a variety of file types 
     pub fn parse(path: &Path) -> Result<ReactionNetwork,MarleaParserError> {
-        // default catch all error state for parser
-        match path.extension() {
-            Some("csv") => {
-
+        // match to see if extension exists
+        return match path.extension() {
+            Some(ext) => {
+                // try match to supported extenstion type 
+                match ext.to_str() {
+                    Some("csv") => {
+                        
+                    },
+                    Some(_) | None => Result::Err(MarleaParserError::UnsupportedExt(format!("provided file {} is not a supported format", path.display() ))),
+                }
             },
-            None => Result::Err(MarleaParserError::InvalidFile(format!("provided  Path: {} \ndid not contain an extension or does not exist"))),
-            
+            None => Result::Err(MarleaParserError::InvalidFile(format!("provided  Path: {} \ndid not contain an extension or does not exist", path.display() ))),
         }
     }
 }
