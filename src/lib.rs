@@ -7,12 +7,12 @@
 /// Its purpose it to take a variety of plaintext source files such as .csv or .rs and compile a reaction network, 
 /// which may be simulated by the [MARlea_engine](https://github.com/nadaso8/MARlea_engine) module.
 
-use std::{path::Path, collections::{HashMap, HashSet}, io::{BufRead, Read}, fmt::format};
+use std::{path::Path, collections::{HashMap, HashSet}, io::Read, fs::File};
 
-use pest::{Parser, iterators::{Pair, Pairs}};
+use pest::{Parser, iterators::{Pair, Pairs}, Token};
 use pest_derive::Parser;
 
-use marlea_engine::trial::reaction_network::{ReactionNetwork, self, solution::{Solution, Name, Count}, reaction::Reaction};
+use marlea_engine::trial::reaction_network::{ReactionNetwork, solution::{Name, Count}, reaction::{Reaction, term::Term}};
 
 // derive parsers 
 #[derive(Parser)]
@@ -20,16 +20,128 @@ use marlea_engine::trial::reaction_network::{ReactionNetwork, self, solution::{S
 struct CSVparser;
 
 impl CSVparser {
-    /// recursively parse csv parser rules into a reaction network 
-    fn to_reaction_network(pairs: Pairs<'_, Rule>) -> ReactionNetwork {
-        let reactions: HashSet<Reaction> = HashSet::new();
-        let species_counts:HashMap<Name, Count> = HashMap::new();
-
-        for pair in pairs {
-            
+    /// gen token stream and parse into a reaction network 
+    pub fn to_reaction_network(source: &str) -> Result<ReactionNetwork,MarleaParserError> {
+        let mut reactions = HashSet::new();
+        let mut species_counts = HashMap::new();
+        
+        return match Self::parse(Rule::reaction_network, &source) {
+            Ok(token_stream) => {
+                
+            },
+            Err(msg) => Result::Err(MarleaParserError::ParseFailed(format!("{}", msg)))
         }
+    }
 
-        return ReactionNetwork::new(reactions, Solution{ species_counts});
+    fn to_reaction (token: Pair<'_, Rule>) -> Result<Reaction,MarleaParserError> {
+        match token.as_rule() {
+            Rule::reaction => {
+
+            },
+            _ => Result::Err(MarleaParserError::ParseFailed(format!("found unexpected {} token {}, expected reaction token", Self::rule_as_str(token.as_rule()), token.as_str()))),
+        }
+    }
+
+    fn to_term (token: Pair<'_, Rule>) -> Result<Term,MarleaParserError> {
+        match token.as_rule() {
+            Rule::term => {
+
+            },
+            _ => Result::Err(MarleaParserError::ParseFailed(format!("found unexpected {} token {}, expected term token", Self::rule_as_str(token.as_rule()), token.as_str()))),
+        }
+    } 
+
+    fn to_name (token: Pair<'_, Rule>) -> Result<Name,MarleaParserError> {
+        match token.as_rule() {
+            Rule::name => {
+                Result::Ok(Name(token.as_str().to_string()))
+            },
+            _ => Result::Err(MarleaParserError::ParseFailed(format!("found unexpected {} token {}, expected name token", Self::rule_as_str(token.as_rule()), token.as_str()))),
+        }
+    } 
+
+    fn to_count (token: Pair<'_, Rule>) -> Result<Count,MarleaParserError> {
+        match token.as_rule() {
+            Rule::coefficient => {
+                if let Ok(count) = token.as_str().parse() {
+                    Result::Ok(Count(count))
+                } else {
+                    // if this error is ever returned you are &$&^%#
+                    Result::Err(MarleaParserError::ParseFailed(format!("something has gone seriously wrong at line {} input {}\nUnparseable character discovered ", token.line_col().0 , token.as_str())))
+                }
+            },
+            _ => Result::Err(MarleaParserError::ParseFailed(format!("found unexpected {} token {}, expected coefficient token", Self::rule_as_str(token.as_rule()), token.as_str()))),
+        }
+    } 
+
+    fn to_reaction_rate (token: Pair<'_, Rule>) -> Result<Count,MarleaParserError> {
+        match token.as_rule() {
+            Rule::reaction_rate => {
+                if let Ok(reaction_rate) = token.as_str().parse() {
+                    Result::Ok(Count(reaction_rate))
+                } else {
+                    // if this error is ever returned you are &$&^%# 
+                    Result::Err(MarleaParserError::ParseFailed(format!("something has gone seriously wrong at line {} input {}\nUnparseable character discovered", token.line_col().0 , token.as_str())))
+                }
+            },
+            _ => Result::Err(MarleaParserError::ParseFailed(format!("found unexpected {} token {}, expected reaction rate token", Self::rule_as_str(token.as_rule()), token.as_str()))),
+        }
+    }
+    
+    fn to_species_count (token: Pair<'_, Rule>) -> Result<(Name, Count), MarleaParserError> {
+        match token.as_rule() {
+            Rule::species_count => {
+            let mut possible_name = Option::None;
+            let mut possible_count = Option::None;
+
+            // known failure modes if multiple name tokens or count tokens present in stream.
+            // this should be impossible but will result in the last token of each type in the stream being used.
+            for sub_token in token.into_inner() {
+                match sub_token.as_rule() {
+                    Rule::name => {
+                        possible_name = match Self::to_name(sub_token) {
+                            Ok(name) => Some(name),
+                            Err(msg) => return Result::Err(msg)
+                        }
+                    }, 
+                    Rule::coefficient => {
+                        possible_count = match Self::to_count(sub_token) {
+                            Ok(count) => Some(count),
+                            Err(msg) => return Result::Err(msg)
+                        }
+                    },
+                    _ => ()
+                }
+            }
+
+            return match (possible_name, possible_count) {
+                (Some(name), Some(count)) => Result::Ok((name, count)),
+                _ => Result::Err(MarleaParserError::ParseFailed(format!("something has gone seriously wrong\nmissing name or count in {} on line {}", token.as_str(), token.line_col().0)))
+            }            
+            },
+            _ => Result::Err(MarleaParserError::ParseFailed(format!("found unexpected {} token {}, expected species count token", Self::rule_as_str(token.as_rule()), token.as_str()))),            
+        }
+    }
+
+    pub fn rule_as_str(rule: Rule) -> &'static str {
+        match rule {
+            crate::Rule::coefficient => "coefficient",
+            crate::Rule::comma_delimiter => "comma_delimiter", 
+            crate::Rule::comment => "comment",
+            crate::Rule::EOI => "end",
+            crate::Rule::fat_arrow_delimiter => "fat_arrow_delimiter",
+            crate::Rule::name => "name",
+            crate::Rule::new_line_delimiter => "new_line_delimiter",
+            crate::Rule::plus_delimiter => "plus_delimiter",
+            crate::Rule::products => "products", 
+            crate::Rule::reactants => "reactants",
+            crate::Rule::reaction => "reaction",
+            crate::Rule::reaction_rate => "reaction_rate",
+            crate::Rule::reaction_network => "reaction_network",
+            crate::Rule::space_delimiter => "space_delimiter",
+            crate::Rule::species_count => "species_count",
+            crate::Rule::term => "term",
+        }
     }
 }
 
@@ -53,10 +165,27 @@ impl marlea_parser {
         // match to see if extension exists
         return match path.extension() {
             Some(ext) => {
+
                 // try match to supported extenstion type 
                 match ext.to_str() {
                     Some("csv") => {
-                        
+
+                        // try to open the file 
+                        match File::open(path) {
+                            Ok(mut source_file) => {    
+                                let mut source_text = String::new();
+
+                                // try to read the file 
+                                match source_file.read_to_string(&mut source_text) {
+                                    Ok(_) => {
+                                        // parse using csv parser 
+                                        CSVparser::to_reaction_network(&source_text)
+                                    },
+                                    Err(_) => Result::Err(MarleaParserError::ParseFailed(format!("failed to read {}" , path.display()))),
+                                }
+                            },
+                            Err(_) => Result::Err(MarleaParserError::ParseFailed(format!("failed to open {}" , path.display()))),
+                        }
                     },
                     Some(_) | None => Result::Err(MarleaParserError::UnsupportedExt(format!("provided file {} is not a supported format", path.display() ))),
                 }
