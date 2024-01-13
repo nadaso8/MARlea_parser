@@ -9,10 +9,10 @@
 
 use std::{path::Path, collections::{HashMap, HashSet}, io::Read, fs::File};
 
-use pest::{Parser, iterators::{Pair, Pairs}, Token};
+use pest::{Parser, iterators::Pair};
 use pest_derive::Parser;
 
-use marlea_engine::trial::reaction_network::{ReactionNetwork, solution::{Name, Count}, reaction::{Reaction, term::Term}};
+use marlea_engine::trial::reaction_network::{ReactionNetwork, solution::{Name, Count, Solution}, reaction::{Reaction, term::Term}};
 
 // derive parsers 
 #[derive(Parser)]
@@ -21,37 +21,141 @@ struct CSVparser;
 
 impl CSVparser {
     /// gen token stream and parse into a reaction network 
-    pub fn to_reaction_network(source: &str) -> Result<ReactionNetwork,MarleaParserError> {
-        let mut reactions = HashSet::new();
-        let mut species_counts = HashMap::new();
-        
+    pub fn as_reaction_network(source: &str) -> Result<ReactionNetwork,MarleaParserError> {
         return match Self::parse(Rule::reaction_network, &source) {
-            Ok(token_stream) => {
-                
+            Ok(mut token_stream) => {
+                let mut reactions = HashSet::new();
+                let mut species_counts = HashMap::new();        
+                let reaction_network = match token_stream.next() {
+                    Some(token) => token,
+                    None => return Result::Err(MarleaParserError::ParseFailed(format!("Source file was parsed but token stream is empty")))
+                };
+
+                for token in reaction_network.into_inner() {
+                    match token.as_rule() {
+                        Rule::reaction => {
+                            // parse reaction token into a reaction object
+                            let reaction = match Self::as_reaction(token) {
+                                Result::Ok(reaction) => reaction,
+                                Result::Err(msg) => return Result::Err(msg)
+                            };
+
+                            reactions.insert(reaction.clone());
+
+                            // loop over reactants and products and try to insert any names into species_counts
+                            for term in reaction.get_reactants() {
+                                species_counts.insert(term.get_species_name().clone(), Count(0));
+                            }
+                            for term in reaction.get_products() {
+                                species_counts.insert(term.get_species_name().clone(), Count(0));    
+                            }
+
+                        },
+                        Rule::species_count => {
+                            // parse species_count token into a (Name, Count) pair 
+                            let mut species_count = match Self::as_species_count(token) {
+                                Result::Ok(species_count) => species_count,
+                                Result::Err(msg) =>  return Result::Err(msg),
+                            };
+                            
+                            // update or insert species (Name, Count) pair
+                            species_counts.get_mut(&species_count.0).get_or_insert(&mut species_count.1);
+                        },
+                        _ => ()
+                    };
+                }
+
+                Result::Ok(ReactionNetwork::new(reactions, Solution{species_counts}))
             },
+            // error if pest fails to match a reaction network token this should catch basically everything and contains the most information back to the user
             Err(msg) => Result::Err(MarleaParserError::ParseFailed(format!("{}", msg)))
         }
     }
 
-    fn to_reaction (token: Pair<'_, Rule>) -> Result<Reaction,MarleaParserError> {
+    fn as_reaction (token: Pair<'_, Rule>) -> Result<Reaction,MarleaParserError> {
         match token.as_rule() {
             Rule::reaction => {
+                let mut reactants = Vec::new();
+                let mut products = Vec::new();
+                let mut possible_reaction_rate = None;
 
+                for sub_token in token.into_inner() {
+                    match sub_token.as_rule() {
+                        Rule::reactants => {
+                            for reactant_token in sub_token.into_inner() {
+                                match Self::as_term(reactant_token) {
+                                    Ok(term) => reactants.push(term),
+                                    Err(msg) => return Result::Err(msg) 
+                                }
+                            }
+                        },
+                        Rule::products => {
+                            for product_token in sub_token.into_inner() {
+                                match Self::as_term(product_token) {
+                                    Ok(term) => products.push(term),
+                                    Err(msg) => return Result::Err(msg) 
+                                }
+                            }
+                        }, 
+                        Rule::reaction_rate => {
+                            possible_reaction_rate = Some(match Self::as_reaction_rate(sub_token) {
+                                Ok(reaction_rate) => reaction_rate,
+                                Err(msg) => return Result::Err(msg)
+                            })
+                        },
+                        _ => ()
+                    }
+                }
+
+                match possible_reaction_rate {
+                    Some(reaction_rate) => {
+                        Result::Ok(Reaction::new(
+                            reactants, 
+                            products, 
+                            reaction_rate.0
+                        ))
+                    }
+                    None => Result::Err(MarleaParserError::ParseFailed(format!("could not find reaction rate in reaction token stream")))
+                }
             },
             _ => Result::Err(MarleaParserError::ParseFailed(format!("found unexpected {} token {}, expected reaction token", Self::rule_as_str(token.as_rule()), token.as_str()))),
         }
     }
 
-    fn to_term (token: Pair<'_, Rule>) -> Result<Term,MarleaParserError> {
+    fn as_term (token: Pair<'_, Rule>) -> Result<Term,MarleaParserError> {
         match token.as_rule() {
             Rule::term => {
+                let mut possible_term: (Option<Name>, Option<Count>) = (None, None);
+                for sub_token in token.into_inner() {
+                    match sub_token.as_rule() {
+                        Rule::name => {
+                            let name = match Self::as_name(sub_token){
+                                Ok(val) => val,
+                                Err(msg) => return Result::Err(msg)
+                            };
+                            possible_term.0 = Some(name);
+                        },
+                        Rule::coefficient => {
+                            let coefficient = match Self::as_count(sub_token) {
+                                Ok(val) => val,
+                                Err(msg) => return Result::Err(msg)
+                            };
+                            possible_term.1 = Some(coefficient);
+                        },
+                        _ => ()
+                    }
+                }
 
+                match possible_term {
+                    (Some(species_name), Some(coefficient)) => Result::Ok(Term::new(species_name, coefficient)),
+                    _ => Result::Err(MarleaParserError::ParseFailed(format!("missing data for term in token stream")))
+                }
             },
             _ => Result::Err(MarleaParserError::ParseFailed(format!("found unexpected {} token {}, expected term token", Self::rule_as_str(token.as_rule()), token.as_str()))),
         }
     } 
 
-    fn to_name (token: Pair<'_, Rule>) -> Result<Name,MarleaParserError> {
+    fn as_name (token: Pair<'_, Rule>) -> Result<Name,MarleaParserError> {
         match token.as_rule() {
             Rule::name => {
                 Result::Ok(Name(token.as_str().to_string()))
@@ -60,7 +164,7 @@ impl CSVparser {
         }
     } 
 
-    fn to_count (token: Pair<'_, Rule>) -> Result<Count,MarleaParserError> {
+    fn as_count (token: Pair<'_, Rule>) -> Result<Count,MarleaParserError> {
         match token.as_rule() {
             Rule::coefficient => {
                 if let Ok(count) = token.as_str().parse() {
@@ -74,7 +178,7 @@ impl CSVparser {
         }
     } 
 
-    fn to_reaction_rate (token: Pair<'_, Rule>) -> Result<Count,MarleaParserError> {
+    fn as_reaction_rate (token: Pair<'_, Rule>) -> Result<Count,MarleaParserError> {
         match token.as_rule() {
             Rule::reaction_rate => {
                 if let Ok(reaction_rate) = token.as_str().parse() {
@@ -88,7 +192,7 @@ impl CSVparser {
         }
     }
     
-    fn to_species_count (token: Pair<'_, Rule>) -> Result<(Name, Count), MarleaParserError> {
+    fn as_species_count (token: Pair<'_, Rule>) -> Result<(Name, Count), MarleaParserError> {
         match token.as_rule() {
             Rule::species_count => {
             let mut possible_name = Option::None;
@@ -96,16 +200,16 @@ impl CSVparser {
 
             // known failure modes if multiple name tokens or count tokens present in stream.
             // this should be impossible but will result in the last token of each type in the stream being used.
-            for sub_token in token.into_inner() {
+            for sub_token in token.clone().into_inner() {
                 match sub_token.as_rule() {
                     Rule::name => {
-                        possible_name = match Self::to_name(sub_token) {
+                        possible_name = match Self::as_name(sub_token) {
                             Ok(name) => Some(name),
                             Err(msg) => return Result::Err(msg)
                         }
                     }, 
                     Rule::coefficient => {
-                        possible_count = match Self::to_count(sub_token) {
+                        possible_count = match Self::as_count(sub_token) {
                             Ok(count) => Some(count),
                             Err(msg) => return Result::Err(msg)
                         }
@@ -153,9 +257,9 @@ pub enum MarleaParserError {
 }
 
 // object containing any settings needed or relevant to the marlea parser 
-struct marlea_parser;
+pub struct MarleaParser;
 
-impl marlea_parser {
+impl MarleaParser {
     pub fn new() -> Self{
         Self
     }
@@ -179,7 +283,7 @@ impl marlea_parser {
                                 match source_file.read_to_string(&mut source_text) {
                                     Ok(_) => {
                                         // parse using csv parser 
-                                        CSVparser::to_reaction_network(&source_text)
+                                        CSVparser::as_reaction_network(&source_text)
                                     },
                                     Err(_) => Result::Err(MarleaParserError::ParseFailed(format!("failed to read {}" , path.display()))),
                                 }
