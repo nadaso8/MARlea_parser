@@ -19,6 +19,7 @@ use marlea_engine::trial::reaction_network::{ReactionNetwork, solution::{Name, C
 #[grammar = "grammars/csv.pest"]
 struct CSVparser;
 
+// functions for interpreting tokenstream output from CSVparser
 impl CSVparser {
     /// gen token stream and parse into a reaction network 
     pub fn as_reaction_network(source: &str) -> Result<ReactionNetwork,MarleaParserError> {
@@ -53,13 +54,13 @@ impl CSVparser {
                         },
                         Rule::species_count => {
                             // parse species_count token into a (Name, Count) pair 
-                            let mut species_count = match Self::as_species_count(token) {
+                            let species_count = match Self::as_species_count(token) {
                                 Result::Ok(species_count) => species_count,
                                 Result::Err(msg) =>  return Result::Err(msg),
                             };
                             
                             // update or insert species (Name, Count) pair
-                            species_counts.get_mut(&species_count.0).get_or_insert(&mut species_count.1);
+                            species_counts.insert(species_count.0, species_count.1);
                         },
                         _ => ()
                     };
@@ -133,7 +134,11 @@ impl CSVparser {
                                 Ok(val) => val,
                                 Err(msg) => return Result::Err(msg)
                             };
-                            possible_term.0 = Some(name);
+                            possible_term = match possible_term {
+                                (None, None) => (Some(name), Some(Count(1))),
+                                (None, Some(count)) => (Some(name), Some(count)),
+                                _ => possible_term
+                            };
                         },
                         Rule::coefficient => {
                             let coefficient = match Self::as_count(sub_token) {
@@ -301,12 +306,15 @@ impl MarleaParser {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    use marlea_engine;
     use pest::Parser;
 
-    use crate::CSVparser;
+    use crate::{CSVparser, MarleaParser, MarleaParserError};
 
     #[test]
-    fn csv() {
+    fn csv_parser_produces_output() {
         let input = {"fibonacci.call => setup.call,1,
         setup.done => calculate.call,1,
         ,,
@@ -453,5 +461,37 @@ mod tests {
                 panic!("failed to parse")
             }
         };
+    }
+
+    #[test]
+    fn marlea_parser_csv_output() {
+
+        let path = Path::new("test_data\\Fibonacci_calculator.csv");
+        let test = marlea_engine::Builder::new(
+            match MarleaParser::parse(path) {
+                Ok(reaction_network) => reaction_network,
+                Err(msg) => {
+                    match msg {
+                        MarleaParserError::ParseFailed(text) => {
+                            print!("{}\n\n", text);
+                            panic!("(;-;)")
+                        },
+                        _ => panic!("huh?")
+                    }
+                },
+            }
+        )
+        .no_response()
+        .trials(10)
+        .build();
+        drop(test.1);
+        let test_results = test.0.run().unwrap().0;
+        
+        for (name, count) in test_results {
+            if name == "return".to_string() {
+                assert!(count > 54.5&& count < 55.5);
+            }
+        }
+
     }
 }
