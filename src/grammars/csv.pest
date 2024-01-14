@@ -1,5 +1,6 @@
 //! CSV parser object
 // delimiters (all of these should be silent)
+byte_order_mark = _{"ï»¿"} // the funny byte order mark
 space_delimiter = _{" "+} // separates coefficients and names
 plus_delimiter = _{" "* ~ "+" ~ " "*} // separates terms
 fat_arrow_delimiter = _{" "* ~ "=>" ~ " "*} // separates reactants and products
@@ -13,15 +14,17 @@ comment = _{"//" ~ (!new_line_delimiter ~ ANY)*}
 coefficient = {ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*} // match any non zero number 
 name = {(&(!space_delimiter ~ !plus_delimiter ~ !fat_arrow_delimiter ~ !comma_delimiter ~ !new_line_delimiter ~ !comment) ~ ANY)+} // match any non delimiter character one or more times 
 term = {(coefficient ~ space_delimiter)? ~ name} // optional coefficient with associated names separated by one or more spaces
-reactants = {((term) ~ (plus_delimiter ~ term)*)|"NULL"} // none or more terms separated by plus signs 
-products = {((term) ~ (plus_delimiter ~ term)*)|"NULL"} // none or more terms separated by plus signs
-reaction_rate = {coefficient} // wrapper around a coefficient
+reactants = {"NULL"|((term) ~ (plus_delimiter ~ term)*)} // none or more terms separated by plus signs 
+products = {"NULL"|((term) ~ (plus_delimiter ~ term)*)} // none or more terms separated by plus signs
+reaction_rate = {ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*} // different tag for a coefficient to help with interpreting
 reaction = {reactants ~ fat_arrow_delimiter ~ products ~ comma_delimiter ~ reaction_rate} // reactants => products, reaction_rate
 species_count = {(name ~ comma_delimiter ~ coefficient)} // a species name which should be initialized to a manual count
 /// The highest level rule for csv parsing. an arbitrary length of reaction or species_count rules.
 /// Each token is eparated by new line characters with optional comments and is tollerant of arbitrary lengths of trailing commas
 reaction_network = {
     SOI
+    ~ (byte_order_mark)?
+    ~ (comma_delimiter|new_line_delimiter)*
     ~ ((reaction | species_count)? ~ (comma_delimiter ~ comment?)*)? 
     ~ (new_line_delimiter ~ (reaction | species_count)? ~ (comma_delimiter ~ comment?)*)*
     ~ !comment ~ !reaction ~ !term ~ !name ~ !coefficient ~ !plus_delimiter ~ !fat_arrow_delimiter

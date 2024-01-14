@@ -45,10 +45,10 @@ impl CSVparser {
 
                             // loop over reactants and products and try to insert any names into species_counts
                             for term in reaction.get_reactants() {
-                                species_counts.insert(term.get_species_name().clone(), Count(0));
+                                species_counts.entry(term.get_species_name().clone()).or_insert(Count(0));
                             }
                             for term in reaction.get_products() {
-                                species_counts.insert(term.get_species_name().clone(), Count(0));    
+                                species_counts.entry(term.get_species_name().clone()).or_insert(Count(0));    
                             }
 
                         },
@@ -60,7 +60,9 @@ impl CSVparser {
                             };
                             
                             // update or insert species (Name, Count) pair
-                            species_counts.insert(species_count.0, species_count.1);
+                            species_counts.entry(species_count.0)
+                            .and_modify(|count| *count = species_count.1.clone())
+                            .or_insert(species_count.1);
                         },
                         _ => ()
                     };
@@ -234,6 +236,7 @@ impl CSVparser {
 
     pub fn rule_as_str(rule: Rule) -> &'static str {
         match rule {
+            crate::Rule::byte_order_mark => "funny mark",
             crate::Rule::coefficient => "coefficient",
             crate::Rule::comma_delimiter => "comma_delimiter", 
             crate::Rule::comment => "comment",
@@ -265,9 +268,6 @@ pub enum MarleaParserError {
 pub struct MarleaParser;
 
 impl MarleaParser {
-    pub fn new() -> Self{
-        Self
-    }
 
     /// Parses a reaction network and solution from a variety of file types 
     pub fn parse(path: &Path) -> Result<ReactionNetwork,MarleaParserError> {
@@ -283,7 +283,7 @@ impl MarleaParser {
                         match File::open(path) {
                             Ok(mut source_file) => {    
                                 let mut source_text = String::new();
-
+                                
                                 // try to read the file 
                                 match source_file.read_to_string(&mut source_text) {
                                     Ok(_) => {
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn csv_parser_produces_output() {
-        let input = {"fibonacci.call => setup.call,1,
+        let input = {",,,\n\n,,\nfibonacci.call => setup.call,1,
         setup.done => calculate.call,1,
         ,,
         setup.call => destruct + next_value + setup.call,1,
@@ -435,6 +435,7 @@ mod tests {
                 print!("{}\n", result);
                 for pair in result{
                     let rule = match pair.as_rule() {
+                        crate::Rule::byte_order_mark => "funny mark",
                         crate::Rule::coefficient => "coefficient",
                         crate::Rule::comma_delimiter => "comma_delimiter", 
                         crate::Rule::comment => "comment",
@@ -464,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn marlea_parser_csv_output() {
+    fn marlea_parser_csv_output( ) {
 
         let path = Path::new("test_data\\Fibonacci_calculator.csv");
         let test = marlea_engine::Builder::new(

@@ -1,4 +1,10 @@
-﻿fibonacci.call => setup.call,1,
+﻿,,
+
+
+
+index,10,
+fibonacci.call,1, 
+fibonacci.call => setup.call,1,
 setup.done => calculate.call,1,
 ,,
 setup.call => destruct + next_value + setup.call,1,
@@ -108,5 +114,3 @@ calculate.return + current_value.not.index.1 => calculate.done,1,
 calculate.return => calculate.return + current_value.not.index.0,1,
 current_value + current_value.not.index.0 => current_value ,10000,
 current_value + current_value.not.index.1 => current_value ,10000,
-fibonacci.call,1
-index,10
