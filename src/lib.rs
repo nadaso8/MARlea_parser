@@ -1,3 +1,4 @@
+use core::slice::SlicePattern;
 /// Author: Marceline Sorensen 
 /// Email: nadaso8th@gmail.com 
 /// Date: 12/24/2023
@@ -7,7 +8,7 @@
 /// Its purpose it to take a variety of plaintext source files such as .csv or .rs and compile a reaction network, 
 /// which may be simulated by the [MARlea_engine](https://github.com/nadaso8/MARlea_engine) module.
 
-use std::{path::Path, collections::{HashMap, HashSet}, io::Read, fs::File};
+use std::{path::Path, collections::{HashMap, HashSet}, io::Read, fs::File, str::{Bytes, from_utf8, Utf8Error}};
 
 use pest::{Parser, iterators::Pair};
 use pest_derive::Parser;
@@ -236,7 +237,6 @@ impl CSVparser {
 
     pub fn rule_as_str(rule: Rule) -> &'static str {
         match rule {
-            crate::Rule::byte_order_mark => "funny mark",
             crate::Rule::coefficient => "coefficient",
             crate::Rule::comma_delimiter => "comma_delimiter", 
             crate::Rule::comment => "comment",
@@ -282,12 +282,26 @@ impl MarleaParser {
                         // try to open the file 
                         match File::open(path) {
                             Ok(mut source_file) => {    
-                                let mut source_text = String::new();
+                                let mut source_bytes = Vec::new();
                                 
                                 // try to read the file 
-                                match source_file.read_to_string(&mut source_text) {
+                                match source_file.read_to_end(&mut source_bytes) {
                                     Ok(_) => {
-                                        // parse using csv parser 
+                                        let utf8_bom: &[u8] = vec![239, 187, 191].as_slice();
+                                        // interpret bytes as utf8 because who needs to tollerate different encodings lol 
+                                        let source_text = match source_bytes.as_slice() {
+                                            utf8_bom=>  {
+                                                match from_utf8(source_bytes.strip_prefix(utf8_bom).as_slice()) {
+                                                Ok(src) => src,
+                                                Err(msg) => return Result::Err(
+                                                    MarleaParserError::ParseFailed(msg.to_string())
+                                                )
+                                                }
+                                            }
+                                            _
+                                        };
+
+                                        // parse using csv parser
                                         CSVparser::as_reaction_network(&source_text)
                                     },
                                     Err(_) => Result::Err(MarleaParserError::ParseFailed(format!("failed to read {}" , path.display()))),
@@ -434,25 +448,7 @@ mod tests {
             Ok(result) => {
                 print!("{}\n", result);
                 for pair in result{
-                    let rule = match pair.as_rule() {
-                        crate::Rule::byte_order_mark => "funny mark",
-                        crate::Rule::coefficient => "coefficient",
-                        crate::Rule::comma_delimiter => "comma_delimiter", 
-                        crate::Rule::comment => "comment",
-                        crate::Rule::EOI => "end",
-                        crate::Rule::fat_arrow_delimiter => "fat_arrow_delimiter",
-                        crate::Rule::name => "name",
-                        crate::Rule::new_line_delimiter => "new_line_delimiter",
-                        crate::Rule::plus_delimiter => "plus_delimiter",
-                        crate::Rule::products => "products", 
-                        crate::Rule::reactants => "reactants",
-                        crate::Rule::reaction => "reaction",
-                        crate::Rule::reaction_rate => "reaction_rate",
-                        crate::Rule::reaction_network => "reaction_network",
-                        crate::Rule::space_delimiter => "space_delimiter",
-                        crate::Rule::species_count => "species_count",
-                        crate::Rule::term => "term",
-                    };
+                    let rule = CSVparser::rule_as_str(pair.as_rule()); 
                     let text = pair.as_str();
                     println!("rule: {} matched: {}", rule, text);
                 }
@@ -475,7 +471,7 @@ mod tests {
                     match msg {
                         MarleaParserError::ParseFailed(text) => {
                             print!("{}\n\n", text);
-                            panic!("(;-;)")
+                            panic!("(;-;)");
                         },
                         _ => panic!("huh?")
                     }
