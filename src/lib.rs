@@ -1,4 +1,3 @@
-use core::slice::SlicePattern;
 /// Author: Marceline Sorensen 
 /// Email: nadaso8th@gmail.com 
 /// Date: 12/24/2023
@@ -278,42 +277,64 @@ impl MarleaParser {
                 // try match to supported extenstion type 
                 match ext.to_str() {
                     Some("csv") => {
-
-                        // try to open the file 
-                        match File::open(path) {
-                            Ok(mut source_file) => {    
-                                let mut source_bytes = Vec::new();
-                                
-                                // try to read the file 
-                                match source_file.read_to_end(&mut source_bytes) {
-                                    Ok(_) => {
-                                        let utf8_bom: &[u8] = vec![239, 187, 191].as_slice();
-                                        // interpret bytes as utf8 because who needs to tollerate different encodings lol 
-                                        let source_text = match source_bytes.as_slice() {
-                                            utf8_bom=>  {
-                                                match from_utf8(source_bytes.strip_prefix(utf8_bom).as_slice()) {
-                                                Ok(src) => src,
-                                                Err(msg) => return Result::Err(
-                                                    MarleaParserError::ParseFailed(msg.to_string())
-                                                )
-                                                }
-                                            }
-                                            _
-                                        };
-
-                                        // parse using csv parser
-                                        CSVparser::as_reaction_network(&source_text)
-                                    },
-                                    Err(_) => Result::Err(MarleaParserError::ParseFailed(format!("failed to read {}" , path.display()))),
-                                }
-                            },
-                            Err(_) => Result::Err(MarleaParserError::ParseFailed(format!("failed to open {}" , path.display()))),
-                        }
+                        Self::handle_csv(path)
                     },
                     Some(_) | None => Result::Err(MarleaParserError::UnsupportedExt(format!("provided file {} is not a supported format", path.display() ))),
                 }
             },
             None => Result::Err(MarleaParserError::InvalidFile(format!("provided  Path: {} \ndid not contain an extension or does not exist", path.display() ))),
+        }
+    }
+
+    /// figures out the encoding format based on the byte order mark and decodes it as such if true 
+    fn decode_file (bytes: &[u8]) -> Result<&str, &str> {
+
+        match bytes {
+            // Found UTF-8 byte order mark
+            [239, 187, 191, ..] => {
+                // Strip byte order mark from bytes
+                let sanitized_bytes = match bytes.strip_prefix(&[239, 187, 191]) {
+                    Some(text) => text,
+                    None => return Result::Err("matched prefix but could not find one to strip from bytes")
+                };
+ 
+                match from_utf8(sanitized_bytes) {
+                    Ok(txt) => Result::Ok(txt),
+                    Err(_) => Result::Err(&"non valid utf8 input")
+                }
+            }, 
+            // Default to utf-8 encoding and assume no BOM was present
+            _ => {
+                match from_utf8(bytes) {
+                    Ok(txt) => Result::Ok(txt),
+                    Err(_) => Result::Err(&"non valid utf8 input")
+                }
+            }
+        }
+    }
+    
+    fn handle_csv (path: &Path) -> Result<ReactionNetwork,MarleaParserError> { 
+        // try to open the file 
+        match File::open(path) {
+            Ok(mut source_file) => {    
+                let mut source_bytes = Vec::new();
+                
+                // try to read the file 
+                match source_file.read_to_end(&mut source_bytes) {
+                    Ok(_) => {
+                        // try to decode bytes from file
+                        let source_text = match Self::decode_file(&source_bytes) {
+                            Ok(txt) => txt,
+                            Err(msg) => return Result::Err(MarleaParserError::ParseFailed(msg.to_string())),
+                        };
+
+                        // parse using csv parser
+                        CSVparser::as_reaction_network(&source_text)
+                    },
+                    Err(_) => Result::Err(MarleaParserError::ParseFailed(format!("failed to read {}" , path.display()))),
+                }
+            },
+            Err(_) => Result::Err(MarleaParserError::ParseFailed(format!("failed to open {}" , path.display()))),
         }
     }
 }
@@ -479,7 +500,7 @@ mod tests {
             }
         )
         .no_response()
-        .trials(10)
+        .trials(1000)
         .build();
         drop(test.1);
         let test_results = test.0.run().unwrap().0;

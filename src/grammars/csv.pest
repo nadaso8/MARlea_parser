@@ -22,7 +22,7 @@ species_count = {(name ~ comma_delimiter ~ coefficient)} // a species name which
 /// Each token is eparated by new line characters with optional comments and is tollerant of arbitrary lengths of trailing commas
 reaction_network = {
     SOI
-    ~ (comma_delimiter|new_line_delimiter)*
+    ~ (comma_delimiter ~ comment? | new_line_delimiter)*
     ~ ((reaction | species_count)? ~ (comma_delimiter ~ comment?)*)? 
     ~ (new_line_delimiter ~ (reaction | species_count)? ~ (comma_delimiter ~ comment?)*)*
     ~ !comment ~ !reaction ~ !term ~ !name ~ !coefficient ~ !plus_delimiter ~ !fat_arrow_delimiter
