@@ -7,7 +7,7 @@
 /// Its purpose it to take a variety of plaintext source files such as .csv or .rs and compile a reaction network, 
 /// which may be simulated by the [MARlea_engine](https://github.com/nadaso8/MARlea_engine) module.
 
-use std::{path::Path, collections::{HashMap, HashSet}, io::Read, fs::File, str::{Bytes, from_utf8, Utf8Error}};
+use std::{collections::{HashMap, HashSet}, default, fs::File, io::Read, path::Path, str::{Bytes, from_utf8, Utf8Error}};
 
 use pest::{Parser, iterators::Pair};
 use pest_derive::Parser;
@@ -257,6 +257,7 @@ impl CSVparser {
 }
 
 
+#[derive(Debug, Clone)]
 pub enum MarleaParserError {
     ParseFailed(String),
     UnsupportedExt(String),
